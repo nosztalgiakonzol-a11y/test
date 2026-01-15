@@ -219,27 +219,43 @@
     .spacer-top.banner-on{
       height: 78px;
     }
+
+    /* Extra: banner button */
+    .open-browser-btn{
+      margin-top:10px;
+      width:100%;
+      padding:10px 12px;
+      border-radius:10px;
+      border:1px solid rgba(251,191,36,0.45);
+      background: rgba(245,158,11,0.25);
+      color:#fff;
+      font-weight:800;
+      cursor:pointer;
+      transition: background 150ms ease, transform 150ms ease;
+    }
+    .open-browser-btn:hover{
+      background: rgba(245,158,11,0.38);
+      transform: translateY(-1px);
+    }
   </style>
 </head>
 
 <body>
-  <!-- Mobile/In-app warning banner -->
+  <!-- Banner (ONLY when PWA=true is present in the URL) -->
   <div id="banner" class="banner" role="region" aria-label="Mobil figyelmeztetés">
     <div class="banner-inner">
       <div class="pulse-ring" aria-hidden="true">
-        <!-- Smartphone icon (inline SVG) -->
         <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" style="color: var(--amber-300);" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <rect x="7" y="2" width="10" height="20" rx="2" ry="2"></rect>
           <path d="M11 18h2"></path>
         </svg>
       </div>
 
-      <div style="min-width:0;">
+      <div style="min-width:0; flex:1;">
         <p class="banner-title">⚠️ Nyisd meg böngészőben!</p>
         <div style="display:flex; flex-direction:column; gap:4px;">
           <p class="banner-text">
             <b>iOS:</b>
-            <!-- External link icon -->
             <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" style="color:#fff;" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M15 3h6v6"></path>
               <path d="M10 14 21 3"></path>
@@ -251,10 +267,14 @@
             <b>Android:</b> ⋮ menü → "Megnyitás Chrome-ban"
           </p>
         </div>
+
+        <!-- One-tap open in browser -->
+        <button id="openInBrowserBtn" class="open-browser-btn" type="button">
+          Megnyitás böngészőben
+        </button>
       </div>
 
       <button id="bannerClose" class="close-btn" type="button" aria-label="Bezárás">
-        <!-- X icon -->
         <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" style="color: currentColor;" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M18 6 6 18"></path>
           <path d="M6 6l12 12"></path>
@@ -267,20 +287,16 @@
     <div class="card" aria-live="polite">
       <div id="topSpacer" class="spacer-top"></div>
 
-      <!-- Animated arrow -->
       <div class="arrow" aria-hidden="true">
-        <!-- ChevronDown icon -->
         <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" style="color: var(--emerald-400);" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
           <path d="m6 9 6 6 6-6"></path>
         </svg>
       </div>
 
-      <!-- Main button -->
       <button id="mainBtn" class="main-btn" type="button" disabled>
         Kattints ide
       </button>
 
-      <!-- Tip box -->
       <div class="tip">
         <p>
           <span class="dot" aria-hidden="true"></span>
@@ -288,7 +304,6 @@
         </p>
       </div>
 
-      <!-- Bookmaker info -->
       <div id="bmBox" class="bm hidden">
         <div id="bm1" class="hidden">1. fogadóiroda: <span></span></div>
         <div id="bm2" class="hidden">2. fogadóiroda: <span></span></div>
@@ -298,24 +313,16 @@
 
   <script>
     (function () {
-      const qs = new URLSearchParams(window.location.search);
-
-      const rawBookmaker1 = qs.get("bookmaker1") || "";
-      const rawBookmaker2 = qs.get("bookmaker2") || "";
-      const rawLink1 = qs.get("link1") || "";
-      const rawLink2 = qs.get("link2") || "";
-
-      // Decode safely (URLSearchParams already decodes, but keep robust for double-encoding cases)
+      // ---------------------------
+      // 1) Read base64url payload from hash: #p=<base64url_json>[&PWA=true]
+      //    Fallback: query params (your old style) still works.
+      // ---------------------------
       const safeDecode = (v) => {
         try { return decodeURIComponent(v); } catch { return v; }
       };
 
-      const bookmaker1 = safeDecode(rawBookmaker1).trim();
-      const bookmaker2 = safeDecode(rawBookmaker2).trim();
-
-      // Basic URL validation: allow only http/https
       const normalizeUrl = (v) => {
-        const s = safeDecode(v).trim();
+        const s = (v || "").trim();
         if (!s) return "";
         try {
           const u = new URL(s);
@@ -326,11 +333,53 @@
         }
       };
 
-      const link1 = normalizeUrl(rawLink1);
-      const link2 = normalizeUrl(rawLink2);
+      // Parse hash parts like: #p=XXXXX&PWA=true
+      const hashRaw = (location.hash || "").replace(/^#/, "");
+      const hashParts = new URLSearchParams(hashRaw); // OK with base64url because it contains only A-Z a-z 0-9 - _
+      const p = hashParts.get("p") || "";
+      const hasPWAFlag = hashParts.get("PWA") === "true";
 
+      let bookmaker1 = "";
+      let bookmaker2 = "";
+      let link1 = "";
+      let link2 = "";
+
+      // Decode base64url JSON if present
+      const decodeBase64UrlJson = (b64url) => {
+        if (!b64url) return null;
+        try {
+          const b64 = b64url.replace(/-/g, "+").replace(/_/g, "/");
+          const pad = "===".slice((b64.length + 3) % 4);
+          const json = atob(b64 + pad);
+          return JSON.parse(json);
+        } catch {
+          return null;
+        }
+      };
+
+      const obj = decodeBase64UrlJson(p);
+      if (obj && typeof obj === "object") {
+        bookmaker1 = (obj.bookmaker1 || "").trim();
+        bookmaker2 = (obj.bookmaker2 || "").trim();
+        link1 = normalizeUrl(obj.link1 || "");
+        link2 = normalizeUrl(obj.link2 || "");
+      } else {
+        // Fallback: query params (old mode)
+        const qs = new URLSearchParams(window.location.search);
+
+        bookmaker1 = safeDecode(qs.get("bookmaker1") || "").trim();
+        bookmaker2 = safeDecode(qs.get("bookmaker2") || "").trim();
+
+        link1 = normalizeUrl(safeDecode(qs.get("link1") || ""));
+        link2 = normalizeUrl(safeDecode(qs.get("link2") || ""));
+      }
+
+      // ---------------------------
+      // 2) UI refs
+      // ---------------------------
       const banner = document.getElementById("banner");
       const bannerClose = document.getElementById("bannerClose");
+      const openInBrowserBtn = document.getElementById("openInBrowserBtn");
       const topSpacer = document.getElementById("topSpacer");
       const btn = document.getElementById("mainBtn");
 
@@ -340,21 +389,11 @@
 
       let isClicked = false;
 
-      const isMobile = () => {
-        const ua = navigator.userAgent || navigator.vendor || "";
-        const byUa = /Android|iPhone|iPad|iPod|IEMobile|Opera Mini/i.test(ua);
-        const byWidth = window.matchMedia && window.matchMedia("(max-width: 768px)").matches;
-        return Boolean(byUa || byWidth);
-      };
-
-      const isInAppBrowser = () => {
-        const ua = navigator.userAgent || navigator.vendor || "";
-        return /FBAN|FBAV|Instagram|Twitter|Line|Snapchat|WebView|wv/i.test(ua);
-      };
-
+      // ---------------------------
+      // 3) Show banner ONLY when PWA=true is present in the URL
+      // ---------------------------
       const showBannerIfNeeded = () => {
-        // Your original logic: show only on mobile OR in-app, but not desktop.
-        if (isMobile() && (isMobile() || isInAppBrowser())) {
+        if (hasPWAFlag) {
           banner.classList.add("show");
           topSpacer.classList.add("banner-on");
         } else {
@@ -363,11 +402,31 @@
         }
       };
 
-      // Populate bookmaker info
+      // ---------------------------
+      // 4) "Open in browser" behavior:
+      //    open same page but REMOVE &PWA=true so popup won't appear again
+      // ---------------------------
+      const openInBrowser = () => {
+        // Remove PWA=true from hash while keeping payload (p=...)
+        const cleanedHash = hashRaw
+          .replace(/(^|&)PWA=true(&|$)/i, (m, p1, p2) => (p1 && p2) ? "" : "")
+          .replace(/&&+/g, "&")
+          .replace(/^&|&$/g, "");
+
+        const cleanUrl = location.origin + location.pathname + (cleanedHash ? "#" + cleanedHash : "");
+
+        // Open externally (best-effort no-referrer)
+        window.open(cleanUrl, "_blank", "noopener,noreferrer");
+      };
+
+      openInBrowserBtn.addEventListener("click", openInBrowser);
+
+      // ---------------------------
+      // 5) Populate bookmaker info (optional)
+      // ---------------------------
       const setBookmakerRow = (el, value) => {
         if (!value) return;
-        const span = el.querySelector("span");
-        span.textContent = value;
+        el.querySelector("span").textContent = value;
         el.classList.remove("hidden");
         bmBox.classList.remove("hidden");
       };
@@ -375,15 +434,17 @@
       setBookmakerRow(bm1, bookmaker1);
       setBookmakerRow(bm2, bookmaker2);
 
-      // Button state
+      // ---------------------------
+      // 6) Button state
+      // ---------------------------
       const updateButtonState = () => {
-        const disabled = isClicked || !link1 || !link2;
-        btn.disabled = disabled;
+        btn.disabled = isClicked || !link1 || !link2;
       };
-
       updateButtonState();
 
-      // Click handler: open link1 in new tab, then redirect current tab to link2
+      // ---------------------------
+      // 7) Click handler: open link1 in new tab, then redirect current tab to link2
+      // ---------------------------
       btn.addEventListener("click", () => {
         if (!link1 || !link2 || isClicked) return;
 
@@ -391,31 +452,22 @@
         btn.textContent = "Átirányítás...";
         updateButtonState();
 
-        // Popup blockers: this is within a user gesture, so it should be allowed in most browsers.
         try {
           window.open(link1, "_blank", "noopener,noreferrer");
-        } catch (e) {
-          // If blocked, we still proceed with redirect to link2
-        }
+        } catch (e) {}
 
-        // Small delay then redirect current tab
         window.setTimeout(() => {
           window.location.href = link2;
         }, 100);
       });
 
-      // Banner close
+      // Banner close (just hides it; does not change URL)
       bannerClose.addEventListener("click", () => {
         banner.classList.remove("show");
         topSpacer.classList.remove("banner-on");
       });
 
-      // Re-evaluate banner on resize (e.g., rotating phone)
-      window.addEventListener("resize", () => {
-        showBannerIfNeeded();
-      });
-
-      // Init banner
+      // Init
       showBannerIfNeeded();
     })();
   </script>
