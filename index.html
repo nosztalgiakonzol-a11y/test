@@ -43,7 +43,7 @@
 
     .card{
       width:100%;
-      max-width: 28rem; /* ~max-w-md */
+      max-width: 28rem;
       text-align:center;
     }
 
@@ -193,34 +193,15 @@
       font-size: 13px;
       line-height:1.5;
     }
-    .bm span{
-      color: #d0d7de;
-    }
+    .bm span{ color: #d0d7de; }
 
-    /* Small helpers */
     .hidden{ display:none !important; }
-    .row{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
-    .icon{
-      width: 18px; height: 18px;
-      display:inline-block;
-      vertical-align: -3px;
-    }
-    .icon-sm{
-      width: 14px; height: 14px;
-      display:inline-block;
-      vertical-align: -2px;
-      margin: 0 4px;
-    }
 
-    /* Avoid content under banner on very small screens */
-    .spacer-top{
-      height: 0px;
-    }
-    .spacer-top.banner-on{
-      height: 78px;
-    }
+    /* Avoid content under banner */
+    .spacer-top{ height: 0px; }
+    .spacer-top.banner-on{ height: 94px; }
 
-    /* Extra: banner button */
+    /* Banner primary action */
     .open-browser-btn{
       margin-top:10px;
       width:100%;
@@ -237,11 +218,14 @@
       background: rgba(245,158,11,0.38);
       transform: translateY(-1px);
     }
+
+    .icon{ width:18px; height:18px; vertical-align:-3px; }
+    .icon-sm{ width:14px; height:14px; vertical-align:-2px; margin:0 4px; }
   </style>
 </head>
 
 <body>
-  <!-- Banner (ONLY when PWA=true is present in the URL) -->
+  <!-- Banner: only shown when &PWA=true is present in hash OR ?PWA=true is present in query -->
   <div id="banner" class="banner" role="region" aria-label="Mobil figyelmeztetés">
     <div class="banner-inner">
       <div class="pulse-ring" aria-hidden="true">
@@ -268,14 +252,13 @@
           </p>
         </div>
 
-        <!-- One-tap open in browser -->
         <button id="openInBrowserBtn" class="open-browser-btn" type="button">
           Megnyitás böngészőben
         </button>
       </div>
 
       <button id="bannerClose" class="close-btn" type="button" aria-label="Bezárás">
-        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" style="color: currentColor;" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M18 6 6 18"></path>
           <path d="M6 6l12 12"></path>
         </svg>
@@ -314,9 +297,11 @@
   <script>
     (function () {
       // ---------------------------
-      // 1) Read base64url payload from hash: #p=<base64url_json>[&PWA=true]
-      //    Fallback: query params (your old style) still works.
+      // GitHub Pages-safe mode:
+      // - Use HASH only: https://arbify-bet.hu/#p=<BASE64URL>&PWA=true
+      // - Do NOT use path payload on GitHub Pages (it will 404).
       // ---------------------------
+
       const safeDecode = (v) => {
         try { return decodeURIComponent(v); } catch { return v; }
       };
@@ -333,16 +318,16 @@
         }
       };
 
-      // Parse hash parts like: #p=XXXXX&PWA=true
+      // Parse hash: #p=XXXXX&PWA=true
       const hashRaw = (location.hash || "").replace(/^#/, "");
-      const hashParts = new URLSearchParams(hashRaw); // OK with base64url because it contains only A-Z a-z 0-9 - _
-      const p = hashParts.get("p") || "";
-      const hasPWAFlag = hashParts.get("PWA") === "true";
+      const hashParts = new URLSearchParams(hashRaw);
 
-      let bookmaker1 = "";
-      let bookmaker2 = "";
-      let link1 = "";
-      let link2 = "";
+      const p = (hashParts.get("p") || "").trim();
+
+      // PWA flag: can be in hash OR query
+      const hasPWAFlag =
+        ((hashParts.get("PWA") || "").toLowerCase() === "true") ||
+        ((new URLSearchParams(location.search).get("PWA") || "").toLowerCase() === "true");
 
       // Decode base64url JSON if present
       const decodeBase64UrlJson = (b64url) => {
@@ -357,26 +342,28 @@
         }
       };
 
+      let bookmaker1 = "";
+      let bookmaker2 = "";
+      let link1 = "";
+      let link2 = "";
+
       const obj = decodeBase64UrlJson(p);
+
       if (obj && typeof obj === "object") {
         bookmaker1 = (obj.bookmaker1 || "").trim();
         bookmaker2 = (obj.bookmaker2 || "").trim();
         link1 = normalizeUrl(obj.link1 || "");
         link2 = normalizeUrl(obj.link2 || "");
       } else {
-        // Fallback: query params (old mode)
+        // Fallback: query params (old mode) if you still want it:
         const qs = new URLSearchParams(window.location.search);
-
         bookmaker1 = safeDecode(qs.get("bookmaker1") || "").trim();
         bookmaker2 = safeDecode(qs.get("bookmaker2") || "").trim();
-
         link1 = normalizeUrl(safeDecode(qs.get("link1") || ""));
         link2 = normalizeUrl(safeDecode(qs.get("link2") || ""));
       }
 
-      // ---------------------------
-      // 2) UI refs
-      // ---------------------------
+      // UI refs
       const banner = document.getElementById("banner");
       const bannerClose = document.getElementById("bannerClose");
       const openInBrowserBtn = document.getElementById("openInBrowserBtn");
@@ -389,9 +376,7 @@
 
       let isClicked = false;
 
-      // ---------------------------
-      // 3) Show banner ONLY when PWA=true is present in the URL
-      // ---------------------------
+      // Show banner ONLY when PWA=true is present
       const showBannerIfNeeded = () => {
         if (hasPWAFlag) {
           banner.classList.add("show");
@@ -402,28 +387,31 @@
         }
       };
 
-      // ---------------------------
-      // 4) "Open in browser" behavior:
-      //    open same page but REMOVE &PWA=true so popup won't appear again
-      // ---------------------------
+      // Open in browser: same page but REMOVE PWA=true from hash and query
       const openInBrowser = () => {
-        // Remove PWA=true from hash while keeping payload (p=...)
+        // Remove PWA=true from hash
         const cleanedHash = hashRaw
-          .replace(/(^|&)PWA=true(&|$)/i, (m, p1, p2) => (p1 && p2) ? "" : "")
-          .replace(/&&+/g, "&")
-          .replace(/^&|&$/g, "");
+          .replace(/(^|&)PWA=true(?=&|$)/ig, "$1")
+          .replace(/^&+|&+$/g, "")
+          .replace(/&{2,}/g, "&");
 
-        const cleanUrl = location.origin + location.pathname + (cleanedHash ? "#" + cleanedHash : "");
+        // Remove PWA=true from query
+        const q = new URLSearchParams(location.search);
+        q.delete("PWA");
+        const query = q.toString();
 
-        // Open externally (best-effort no-referrer)
+        const cleanUrl =
+          location.origin +
+          location.pathname +
+          (query ? "?" + query : "") +
+          (cleanedHash ? "#" + cleanedHash : "");
+
         window.open(cleanUrl, "_blank", "noopener,noreferrer");
       };
 
       openInBrowserBtn.addEventListener("click", openInBrowser);
 
-      // ---------------------------
-      // 5) Populate bookmaker info (optional)
-      // ---------------------------
+      // Populate bookmaker info
       const setBookmakerRow = (el, value) => {
         if (!value) return;
         el.querySelector("span").textContent = value;
@@ -434,17 +422,18 @@
       setBookmakerRow(bm1, bookmaker1);
       setBookmakerRow(bm2, bookmaker2);
 
-      // ---------------------------
-      // 6) Button state
-      // ---------------------------
+      // Button state
       const updateButtonState = () => {
         btn.disabled = isClicked || !link1 || !link2;
+        if (!link1 || !link2) {
+          btn.textContent = "Hiányzó linkek";
+        } else if (!isClicked) {
+          btn.textContent = "Kattints ide";
+        }
       };
       updateButtonState();
 
-      // ---------------------------
-      // 7) Click handler: open link1 in new tab, then redirect current tab to link2
-      // ---------------------------
+      // Main click: open link1 in new tab, then redirect current tab to link2
       btn.addEventListener("click", () => {
         if (!link1 || !link2 || isClicked) return;
 
@@ -461,7 +450,7 @@
         }, 100);
       });
 
-      // Banner close (just hides it; does not change URL)
+      // Banner close (just hides it)
       bannerClose.addEventListener("click", () => {
         banner.classList.remove("show");
         topSpacer.classList.remove("banner-on");
